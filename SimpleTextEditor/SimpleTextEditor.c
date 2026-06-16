@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <windows.h>
+#include <stdbool.h>
 
 struct Node {
     char* text;        // посилання на першу комірку тексту
@@ -10,15 +12,14 @@ struct Node {
     struct Node* next_pointer; // Вказівник на наступну ноду
 };
 
-// Функція підбирає найменше capacity (через найбільший степінь двійки)
+// Функція підбирає найменше capacity (через степінь двійки)
 int calculate_capacity(int target_length) {
     int capacity = 1;
-    while (capacity < target_length) {
+    while (capacity <= target_length){
         capacity *= 2;
     }
     return capacity;
 }
-
 
 struct Node* create_node(char* initial_text) {
     struct Node* current_node_pointer = (struct Node*)malloc(sizeof(struct Node));
@@ -35,7 +36,6 @@ struct Node* create_node(char* initial_text) {
     return current_node_pointer;
 }
 
-
 void ensure_capacity(struct Node* node_pointer, int additional_length) {
     int required_length = (*node_pointer).length + additional_length;
 
@@ -43,6 +43,8 @@ void ensure_capacity(struct Node* node_pointer, int additional_length) {
         int new_capacity = calculate_capacity(required_length); 
 
         (*node_pointer).text = (char*)realloc( (*node_pointer).text, new_capacity ); // з полички на полички
+        printf("DEBUG: realloc з %d до %d\n", (*node_pointer).capacity, new_capacity);
+
 
         if ( (*node_pointer).text == NULL ) {
             printf("Критична помилка: Не вдалося перерозподілити пам'ять. Text = null\n");
@@ -87,60 +89,188 @@ void insert_text_at(struct Node* node_pointer, int index, char* insert_text) {
     (*node_pointer).length = (*node_pointer).length + insert_len;
 }
 
+struct Node* get_last_node(struct Node* head) {
+    if (head == NULL) {
+        return NULL;
+    }
 
-//void save_to_file(struct Node* head, const char* filename) {
-//    FILE* file = fopen(filename, "w");
-//    if (!file) {
-//        printf("Error: Не вдалося відкрити файл для запису.\n");
-//        return;
-//    }
-//
-//    struct Node* current = head;
-//    while (current != NULL) {
-//        fprintf(file, "%s\n", current->text);
-//        current = current->next;
-//    }
-//    fclose(file);
-//    printf("Text has been saved successfully\n");
-//}
+    struct Node* current_node_pointer = head;
+    while ( (*current_node_pointer).next_pointer != NULL ) {
+        current_node_pointer = (*current_node_pointer).next_pointer;
+    }
 
-//struct Node* load_from_file(const char* filename) {
-//    FILE* file = fopen(filename, "r");
-//    if (!file) {
-//        // Якщо файл відсутній, залишаємо поточний буфер без змін 
-//        printf("Error: File not found.\n");
-//        return NULL;
-//    }
-//
-//    struct Node* head = NULL;
-//    struct Node* tail = NULL;
-//    char buffer[1024]; // Тимчасовий буфер для читання рядків
-//
-//    while (fgets(buffer, sizeof(buffer), file) != NULL) {
-//        // Видаляємо символ переносу рядка, якщо він є
-//        buffer[strcspn(buffer, "\n")] = '\0';
-//
-//        struct Node* new_node = create_node(buffer);
-//        if (head == NULL) {
-//            head = new_node;
-//            tail = new_node;
-//        }
-//        else {
-//            tail->next = new_node;
-//            tail = new_node;
-//        }
-//    }
-//
-//    fclose(file);
-//    printf("Text has been loaded successfully\n");
-//    return head; // Повертаємо нову "голову" списку
-//}
+    return current_node_pointer;
+}
 
+void print_text(struct Node* head) {
+    if (head == NULL) {
+        printf("Немає тексту для друку.");
+        return;
+    }
 
+    struct Node* current_node_pointer = head;
+    while (current_node_pointer != NULL) {
+        printf( "%s\n", (*current_node_pointer).text );
+        current_node_pointer = (*current_node_pointer).next_pointer;
+    }
+}
+
+void file_write_implementation(struct Node* head) {
+    char file_name[256];
+    printf("Enter the file name for saving: ");
+
+    if (scanf("%s", file_name) != 1) {
+        printf("Invalid input! Please enter a file name.\n");
+        while (getchar() != '\n');
+        return;
+    }
+    else {
+        while (getchar() != '\n');
+    }
+
+    struct Node* current_node_pointer = head;
+
+    FILE* file;
+    file = fopen(file_name, "w");
+
+    if (file != NULL) {
+        while (current_node_pointer != NULL) {
+            fputs((*current_node_pointer).text, file);
+            fputs("\n", file);
+            current_node_pointer = (*current_node_pointer).next_pointer;
+        }
+
+        fclose(file);
+        printf("Text has been saved successfully\n");
+    }
+    else {
+        printf("Error: File can not be opened!\n");
+    }
+}
+
+void clean_list(struct Node* head) {
+    struct Node* current = head;
+    while (current != NULL) {
+        struct Node* next = (*current).next_pointer;
+        free( (*current).text ); 
+        free(current);     
+        current = next;
+    }
+}
+
+struct Node* file_read_implementation(struct Node* head) {
+    char file_name[256];
+    printf("Enter file name for loading: ");
+
+    if (scanf("%s", file_name) != 1) {
+        printf("Invalid input!\n");
+        while (getchar() != '\n');
+        return head; // повертаємо старий head
+    }
+    while (getchar() != '\n');
+
+    FILE* file = fopen(file_name, "r");
+    if (file == NULL) {
+        printf("Error opening file or file does not exist!\n");
+        return head; // повертаємо старий head
+    }
+
+    if (head != NULL) {
+        clean_list(head);
+        head = NULL;
+    }
+
+    char buffer[512]; // буфер для читання рядка
+    struct Node* tail_pointer = NULL;
+
+    while (fgets(buffer, sizeof(buffer), file) != NULL) {
+
+        int len = strcspn(buffer, "\n");
+        buffer[len] = '\0';
+
+        struct Node* new_node = create_node(buffer);
+
+        if (head == NULL) {
+            head = new_node;       
+            tail_pointer = head;
+        }
+        else {
+            (*tail_pointer).next_pointer = new_node; 
+            tail_pointer = new_node;               
+        }
+    }
+
+    fclose(file);
+    printf("Text has been loaded successfully from '%s'\n", file_name);
+    return head;
+}
+
+void search_text(struct Node* head) {
+    if (head == NULL) {
+        printf("Немає тексту, в якому шукати.\n");
+        return;
+    }
+
+    char search_buffer[512]; //
+    printf("Enter text to search: ");
+
+    fgets(search_buffer, sizeof(search_buffer), stdin); // просимо інпут
+    int len = strcspn(search_buffer, "\n");
+    search_buffer[len] = '\0'; // прибираємо \n з кінця інпуту
+
+    if (strlen(search_buffer) == 0) {
+        printf("Помилка. Пустий пошуковий запит.\n");
+        return;
+    }
+
+    struct Node* current = head;
+    int line_index = 0;       
+    bool found_any = false;
+
+    while (current != NULL) {
+        char* text = (*current).text;
+        int text_len = (*current).length;
+        int search_len = strlen(search_buffer); // вводимо спеціальну змінну, щоб не писати декілька раз strlen(search_buffer)
+
+        for (int i = 0; i <= text_len - search_len; i++) { // рух по тексту
+            bool match = true;
+
+            for (int j = 0; j < search_len; j++) { // рух по шуканому слову
+                if (text[i + j] != search_buffer[j]) {
+                    match = false; 
+                    break;         
+                }
+            }
+
+            if (match) {
+                if (!found_any) {
+                    printf("Text is present in this position: ");
+                    found_any = true;
+                }
+
+                printf("%d %d, ", line_index, i); // прибрати кому
+                i += search_len - 1;
+            }
+        }
+
+        current = (*current).next_pointer;
+        line_index++;
+    }
+
+    if (found_any) {
+        printf("\n");
+    }
+    else {
+        printf("Текст не знайдено.\n");
+    }
+}
 
 
 int main()
 {
+    SetConsoleCP(1251); // хз чому
+    SetConsoleOutputCP(1251);
+    
     struct Node* head = NULL; // Наш текст на початку порожній    
 
     int command;
@@ -159,7 +289,7 @@ int main()
         printf("\n> ");
         
 
-        // Перша безпечна перевірка вводу на старті програми
+        // Перевірка input
         if (scanf("%d", &command) != 1)
         {
             printf("Invalid input! Please enter a number.\n");
@@ -173,39 +303,108 @@ int main()
         }
         
 
+        // парсинг
         switch (command)
         {
         case 0:
             return 0; // exit
 
+
         case 1: // Append text symbols to the end
-            printf("Command 1 is not implemented yet\n");
-            //appendText(&head);       
+        {
+            char input_buffer[512];
+            printf("Enter text to append: ");
+            fgets(
+                input_buffer,           // save to
+                sizeof(input_buffer),   // of size
+                stdin                   // from (standart input)
+            );
+
+            int input_len = strcspn(input_buffer, "\n");
+            input_buffer[input_len] = '\0';
+
+            if (head == NULL) {
+                head = create_node(input_buffer);
+            }
+            else {
+
+                struct Node* tail_pointer = get_last_node(head);
+                append_text_to_node(tail_pointer, input_buffer);
+            }
+            break;
+        }
+
+        case 2: // Start the new line
+        {
+            if (head == NULL) {
+                head = create_node("");
+            }
+            else {
+                struct Node* tail_pointer = get_last_node(head);
+                (*tail_pointer).next_pointer = create_node("");
+            }
+            printf("New line is started\n");
+            break;
+        }
+
+        case 3: // Use files to load the information
+            head = file_read_implementation(head);
             break;
 
-        case 2: // Start the new line 
-            printf("Command 2 is not implemented yet\n");
+        case 4: // Use files to save the information 
+            file_write_implementation(head);
             break;
 
-        case 3: // Use files to load/save the information 
-            printf("Command 3 is not implemented yet\n");
+        case 5: // Print the current text to console 
+            print_text(head);
             break;
 
-        case 4: // Print the current text to console 
-            printf("Command 4 is not implemented yet\n");
-            //printText(head);
-            break;
+        case 6: // Insert the text by line and symbol index
+        {
+            int line_index;
+            int char_index;
+            char input_buffer[512];
 
-        case 5: // Insert the text by line and symbol index 
-            printf("Command 5 is not implemented yet\n");
-            break;
+            printf("Choose line and index: "); // start from 0 0
+            
+            if (scanf("%d %d", &line_index, &char_index) != 2) {
+                printf("Invalid input.\n");
+                while (getchar() != '\n');
+                break;
+            }
 
-        case 6: //  Search (please note that the text can be found more than once) 
-            printf("Command 6 is not implemented yet\n");
-            break;
+            while (getchar() != '\n');
 
-        case 7: // (Optional) Clearing the console
-            printf("Command 7 is not implemented yet\n");
+            printf("Enter text to insert: ");
+
+            fgets(
+                input_buffer,           // save to
+                sizeof(input_buffer),   // of size
+                stdin                   // from (standart input)
+            );
+
+            int input_len = strcspn(input_buffer, "\n");
+            input_buffer[input_len] = '\0';
+
+            struct Node* current_node_pointer = head; // доходимо до потрідного рядку
+            int current_line = 0; 
+
+            while (current_node_pointer != NULL && current_line < line_index) {
+                current_node_pointer = (*current_node_pointer).next_pointer;
+                current_line++;
+            }
+
+            if (current_node_pointer == NULL) {
+                printf("Error: Line out of range.\n");
+            }
+            else {
+                insert_text_at(current_node_pointer, char_index, input_buffer);
+            }
+            break;
+        }
+
+        case 7: // Search 
+            search_text(head);
             break;
 
         default:

@@ -3,5 +3,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="SimpleTextEditor/SimpleTextEditor.vcxproj" />
+  <Project Path="SimpleTextEditor/SimpleTextEditor.vcxproj" Id="87889010-7549-43e6-abff-bb86d0594c50" />
 </Solution>
