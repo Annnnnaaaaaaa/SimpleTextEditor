@@ -22,10 +22,11 @@ struct Snapshot {
 
 // Стек для undo і redo
 struct Snapshot undo_stack[MAX_HISTORY];
-int undo_top = -1; // індекс вершини (-1 = порожній)
+int undo_top = -1; // індекс ноди (-1 = порожній)
 
 struct Snapshot redo_stack[MAX_HISTORY];
-int redo_top = -1;
+int redo_top = -1; // індекс ноди (-1 = порожній)
+
 
 
 
@@ -317,17 +318,15 @@ void insert_with_replacement(struct Node* head, int line_index, int char_index, 
     memcpy((*cur).text + char_index, new_text, new_len);
 }
 
-// Зробити знімок поточного стану списку
 struct Snapshot make_snapshot(struct Node* head) {
     struct Snapshot snap;
     snap.count = 0;
     snap.lines = NULL;
 
-    // Рахуємо кількість рядків
     struct Node* cur = head;
-    while (cur != NULL) {
+    while (cur != NULL) { // рахуємо кількість рядків
         snap.count++;
-        cur = cur->next_pointer;
+        cur = (*cur).next_pointer;
     }
 
     if (snap.count == 0) return snap;
@@ -335,24 +334,22 @@ struct Snapshot make_snapshot(struct Node* head) {
     snap.lines = (char**)malloc(snap.count * sizeof(char*));
     cur = head;
     for (int i = 0; i < snap.count; i++) {
-        snap.lines[i] = (char*)malloc(cur->length + 1);
-        strcpy(snap.lines[i], cur->text);
-        cur = cur->next_pointer;
+        snap.lines[i] = (char*)malloc((*cur).length + 1);
+        strcpy(snap.lines[i], (*cur).text);
+        cur = (*cur).next_pointer;
     }
     return snap;
 }
 
-// Звільнити пам'ять знімку
 void free_snapshot(struct Snapshot* snap) {
-    for (int i = 0; i < snap->count; i++) {
-        free(snap->lines[i]);
+    for (int i = 0; i < (*snap).count; i++) {
+        free((*snap).lines[i]);
     }
-    if (snap->lines != NULL) free(snap->lines);
-    snap->lines = NULL;
-    snap->count = 0;
+    if ((*snap).lines != NULL) free((*snap).lines);
+    (*snap).lines = NULL;
+    (*snap).count = 0;
 }
 
-// Відновити список з знімку (повертає новий head)
 struct Node* restore_snapshot(struct Snapshot snap) {
     struct Node* new_head = NULL;
     struct Node* tail = NULL;
@@ -363,17 +360,16 @@ struct Node* restore_snapshot(struct Snapshot snap) {
             tail = n;
         }
         else {
-            tail->next_pointer = n;
+            (*tail).next_pointer = n;
             tail = n;
         }
     }
     return new_head;
 }
 
-// Записати поточний стан у undo-стек (перед будь-якою зміною)
+// записуємо поточний стан у undo перед будь-якою зміною (1, 2, 6, 14)
 void push_undo(struct Node* head) {
-    // Якщо стек повний — зсуваємо вліво (видаляємо найстарший)
-    if (undo_top == MAX_HISTORY - 1) {
+    if (undo_top == MAX_HISTORY - 1) { // видаляємо найстаріший запис, якщо стек переповнено
         free_snapshot(&undo_stack[0]);
         for (int i = 0; i < MAX_HISTORY - 1; i++) {
             undo_stack[i] = undo_stack[i + 1];
@@ -383,7 +379,7 @@ void push_undo(struct Node* head) {
     undo_top++;
     undo_stack[undo_top] = make_snapshot(head);
 
-    // Після нової дії — redo очищується
+    // очищуємо redo після нової дії
     for (int i = 0; i <= redo_top; i++) {
         free_snapshot(&redo_stack[i]);
     }
@@ -395,18 +391,17 @@ struct Node* undo_command(struct Node* head) {
         printf("Undo: нічого скасовувати.\n");
         return head;
     }
-    // Зберігаємо поточний стан у redo
     if (redo_top == MAX_HISTORY - 1) {
         free_snapshot(&redo_stack[0]);
         for (int i = 0; i < MAX_HISTORY - 1; i++) {
-            redo_stack[i] = redo_stack[i + 1];
+            redo_stack[i] = redo_stack[i + 1]; // зберігаємо поточний стан у redo
         }
         redo_top--;
     }
     redo_top++;
     redo_stack[redo_top] = make_snapshot(head);
 
-    // Відновлюємо попередній стан
+    // відновлюємо попередній стан
     struct Snapshot snap = undo_stack[undo_top];
     struct Node* new_head = restore_snapshot(snap);
     free_snapshot(&undo_stack[undo_top]);
@@ -422,18 +417,17 @@ struct Node* redo_command(struct Node* head) {
         printf("Redo: нічого повертати.\n");
         return head;
     }
-    // Зберігаємо поточний стан у undo
     if (undo_top == MAX_HISTORY - 1) {
         free_snapshot(&undo_stack[0]);
         for (int i = 0; i < MAX_HISTORY - 1; i++) {
-            undo_stack[i] = undo_stack[i + 1];
+            undo_stack[i] = undo_stack[i + 1]; // Зберігаємо поточний стан у undo
         }
         undo_top--;
     }
     undo_top++;
     undo_stack[undo_top] = make_snapshot(head);
 
-    // Відновлюємо redo-стан
+    // повертаємо текст до стану який був після скасованої дії
     struct Snapshot snap = redo_stack[redo_top];
     struct Node* new_head = restore_snapshot(snap);
     free_snapshot(&redo_stack[redo_top]);
@@ -442,6 +436,33 @@ struct Node* redo_command(struct Node* head) {
     clean_list(head);
     printf("Redo виконано.\n");
     return new_head;
+}
+
+// видаляє num_chars символів у рядку line_index починаючи з char_index
+void delete_text(struct Node* head, int line_index, int char_index, int num_chars) {
+    struct Node* cur = head;
+    int cur_line = 0;
+    while (cur != NULL && cur_line < line_index) {
+        cur = (*cur).next_pointer;
+        cur_line++;
+    }
+    if (cur == NULL) {
+        printf("Error: Line out of range.\n");
+        return;
+    }
+    if (char_index < 0 || char_index > (*cur).length) {
+        printf("Error: Char index out of range.\n");
+        return;
+    }
+    // обрізаємо num_chars щоб не вийти за межі рядка
+    if (char_index + num_chars > (*cur).length) {
+        num_chars = (*cur).length - char_index;
+    }
+    // зсуваємо решту рядка вліво
+    memmove((*cur).text + char_index,
+        (*cur).text + char_index + num_chars,
+        (*cur).length - char_index - num_chars + 1);
+    (*cur).length -= num_chars;
 }
 
 
@@ -602,7 +623,21 @@ int main()
             break;
 
         case 8: // Delete
+        {
+            int line_index, char_index, num_chars;
+            printf("Choose line, index and number of symbols: ");
+            if (scanf("%d %d %d", &line_index, &char_index, &num_chars) != 3) {
+                printf("Invalid input.\n");
+                while (getchar() != '\n');
+                break;
+            }
+            while (getchar() != '\n');
+
+            push_undo(head);
+            delete_text(head, line_index, char_index, num_chars);
             break;
+            break;
+        }
 
         case 9: // Undo
             head = undo_command(head);
