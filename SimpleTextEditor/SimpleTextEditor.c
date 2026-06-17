@@ -12,6 +12,24 @@ struct Node {
     struct Node* next_pointer; // Вказівник на наступну ноду
 };
 
+#define MAX_HISTORY 10 // те саме, що const int MAX_HISTORY = 10; тільки працює  // глибина undo/redo
+
+// Один знімок стану — масив рядків (по одному на кожен Node)
+struct Snapshot {
+    char** lines;   // масив рядків
+    int count;      // кількість рядків
+};
+
+// Стек для undo і redo
+struct Snapshot undo_stack[MAX_HISTORY];
+int undo_top = -1; // індекс вершини (-1 = порожній)
+
+struct Snapshot redo_stack[MAX_HISTORY];
+int redo_top = -1;
+
+
+
+
 // Функція підбирає найменше capacity (через степінь двійки)
 int calculate_capacity(int target_length) {
     int capacity = 1;
@@ -269,37 +287,163 @@ void insert_with_replacement(struct Node* head, int line_index, int char_index, 
     struct Node* cur = head;
     int cur_line = 0;
     while (cur != NULL && cur_line < line_index) {
-        cur = cur->next_pointer;
+        cur = (*cur).next_pointer;
         cur_line++;
     }
     if (cur == NULL) {
         printf("Error: Line out of range.\n");
         return;
     }
-    if (char_index < 0 || char_index > cur->length) {
+    if (char_index < 0 || char_index > (*cur).length) {
         printf("Error: Char index out of range.\n");
         return;
     }
 
     int new_len = strlen(new_text);
-    // Скільки символів ми перекриваємо (overwrite)
-    int overwrite_count = cur->length - char_index;
+    int overwrite_count = (*cur).length - char_index; // скільки символів переписуємо
     if (overwrite_count > new_len) overwrite_count = new_len;
 
-    // Якщо новий текст довший — треба збільшити місце
-    int extra = new_len - overwrite_count; // додаткові символи після overwrite зони
+    int extra = new_len - overwrite_count; // додаткові символи після overwrite зони, якщо треба збільшити місце
     if (extra > 0) {
         ensure_capacity(cur, extra);
-        // Зсуваємо хвіст вправо
-        memmove(cur->text + char_index + new_len,
-            cur->text + char_index + overwrite_count,
-            cur->length - char_index - overwrite_count + 1);
-        cur->length += extra;
+        // зсуваємо хвіст вправо (створюємо дирку)
+        memmove((*cur).text + char_index + new_len,
+            (*cur).text + char_index + overwrite_count,
+            (*cur).length - char_index - overwrite_count + 1);
+        (*cur).length += extra;
     }
 
-    // Копіюємо новий текст поверх
-    memcpy(cur->text + char_index, new_text, new_len);
+    // копіюємо новий текст в дирку
+    memcpy((*cur).text + char_index, new_text, new_len);
 }
+
+// Зробити знімок поточного стану списку
+struct Snapshot make_snapshot(struct Node* head) {
+    struct Snapshot snap;
+    snap.count = 0;
+    snap.lines = NULL;
+
+    // Рахуємо кількість рядків
+    struct Node* cur = head;
+    while (cur != NULL) {
+        snap.count++;
+        cur = cur->next_pointer;
+    }
+
+    if (snap.count == 0) return snap;
+
+    snap.lines = (char**)malloc(snap.count * sizeof(char*));
+    cur = head;
+    for (int i = 0; i < snap.count; i++) {
+        snap.lines[i] = (char*)malloc(cur->length + 1);
+        strcpy(snap.lines[i], cur->text);
+        cur = cur->next_pointer;
+    }
+    return snap;
+}
+
+// Звільнити пам'ять знімку
+void free_snapshot(struct Snapshot* snap) {
+    for (int i = 0; i < snap->count; i++) {
+        free(snap->lines[i]);
+    }
+    if (snap->lines != NULL) free(snap->lines);
+    snap->lines = NULL;
+    snap->count = 0;
+}
+
+// Відновити список з знімку (повертає новий head)
+struct Node* restore_snapshot(struct Snapshot snap) {
+    struct Node* new_head = NULL;
+    struct Node* tail = NULL;
+    for (int i = 0; i < snap.count; i++) {
+        struct Node* n = create_node(snap.lines[i]);
+        if (new_head == NULL) {
+            new_head = n;
+            tail = n;
+        }
+        else {
+            tail->next_pointer = n;
+            tail = n;
+        }
+    }
+    return new_head;
+}
+
+// Записати поточний стан у undo-стек (перед будь-якою зміною)
+void push_undo(struct Node* head) {
+    // Якщо стек повний — зсуваємо вліво (видаляємо найстарший)
+    if (undo_top == MAX_HISTORY - 1) {
+        free_snapshot(&undo_stack[0]);
+        for (int i = 0; i < MAX_HISTORY - 1; i++) {
+            undo_stack[i] = undo_stack[i + 1];
+        }
+        undo_top--;
+    }
+    undo_top++;
+    undo_stack[undo_top] = make_snapshot(head);
+
+    // Після нової дії — redo очищується
+    for (int i = 0; i <= redo_top; i++) {
+        free_snapshot(&redo_stack[i]);
+    }
+    redo_top = -1;
+}
+
+struct Node* undo_command(struct Node* head) {
+    if (undo_top < 0) {
+        printf("Undo: нічого скасовувати.\n");
+        return head;
+    }
+    // Зберігаємо поточний стан у redo
+    if (redo_top == MAX_HISTORY - 1) {
+        free_snapshot(&redo_stack[0]);
+        for (int i = 0; i < MAX_HISTORY - 1; i++) {
+            redo_stack[i] = redo_stack[i + 1];
+        }
+        redo_top--;
+    }
+    redo_top++;
+    redo_stack[redo_top] = make_snapshot(head);
+
+    // Відновлюємо попередній стан
+    struct Snapshot snap = undo_stack[undo_top];
+    struct Node* new_head = restore_snapshot(snap);
+    free_snapshot(&undo_stack[undo_top]);
+    undo_top--;
+
+    clean_list(head);
+    printf("Undo виконано.\n");
+    return new_head;
+}
+
+struct Node* redo_command(struct Node* head) {
+    if (redo_top < 0) {
+        printf("Redo: нічого повертати.\n");
+        return head;
+    }
+    // Зберігаємо поточний стан у undo
+    if (undo_top == MAX_HISTORY - 1) {
+        free_snapshot(&undo_stack[0]);
+        for (int i = 0; i < MAX_HISTORY - 1; i++) {
+            undo_stack[i] = undo_stack[i + 1];
+        }
+        undo_top--;
+    }
+    undo_top++;
+    undo_stack[undo_top] = make_snapshot(head);
+
+    // Відновлюємо redo-стан
+    struct Snapshot snap = redo_stack[redo_top];
+    struct Node* new_head = restore_snapshot(snap);
+    free_snapshot(&redo_stack[redo_top]);
+    redo_top--;
+
+    clean_list(head);
+    printf("Redo виконано.\n");
+    return new_head;
+}
+
 
 
 int main()
@@ -367,6 +511,8 @@ int main()
             int input_len = strcspn(input_buffer, "\n");
             input_buffer[input_len] = '\0';
 
+            push_undo(head); // щоб зберегти стан до змін
+
             if (head == NULL) {
                 head = create_node(input_buffer);
             }
@@ -380,6 +526,8 @@ int main()
 
         case 2: // Start the new line
         {
+            push_undo(head);
+
             if (head == NULL) {
                 head = create_node("");
             }
@@ -442,6 +590,8 @@ int main()
                 printf("Error: Line out of range.\n");
             }
             else {
+                push_undo(head);
+
                 insert_text_at(current_node_pointer, char_index, input_buffer);
             }
             break;
@@ -455,9 +605,11 @@ int main()
             break;
 
         case 9: // Undo
+            head = undo_command(head);
             break;
 
         case 10: // Redo
+            head = redo_command(head);
             break;
 
         case 11: // Cut
@@ -484,6 +636,8 @@ int main()
             fgets(input_buffer, sizeof(input_buffer), stdin);
             int input_len = strcspn(input_buffer, "\n");
             input_buffer[input_len] = '\0';
+
+            push_undo(head);
 
             insert_with_replacement(head, line_index, char_index, input_buffer);
             break;
