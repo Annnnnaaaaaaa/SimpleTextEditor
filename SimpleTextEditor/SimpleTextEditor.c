@@ -29,6 +29,8 @@ int redo_top = -1; // індекс ноди (-1 = порожній)
 
 
 
+char* clipboard = NULL; // вказівник; якщо виділити пам'ять стане змінною, яка зберігає скопійований текст у пам'яті
+
 
 
 // Функція підбирає найменше capacity (через степінь двійки)
@@ -465,6 +467,86 @@ void delete_text(struct Node* head, int line_index, int char_index, int num_char
     (*cur).length -= num_chars;
 }
 
+void cut_text(struct Node* head, int line_index, int char_index, int num_chars) {
+    struct Node* cur = head;
+    int cur_line = 0;
+    while (cur != NULL && cur_line < line_index) {
+        cur = cur->next_pointer;
+        cur_line++;
+    }
+    if (cur == NULL) {
+        printf("Error: Line out of range.\n");
+        return;
+    }
+    if (char_index < 0 || char_index >= cur->length) {
+        printf("Error: Char index out of range.\n");
+        return;
+    }
+    if (char_index + num_chars > cur->length) {
+        num_chars = cur->length - char_index;
+    }
+
+    // Копіюємо у clipboard
+    if (clipboard != NULL) free(clipboard);
+    clipboard = (char*)malloc(num_chars + 1);
+    strncpy(clipboard, cur->text + char_index, num_chars);
+    clipboard[num_chars] = '\0';
+
+    // Видаляємо (reuse delete логіки)
+    memmove(cur->text + char_index,
+        cur->text + char_index + num_chars,
+        cur->length - char_index - num_chars + 1);
+    cur->length -= num_chars;
+
+    printf("Cut: '%s'\n", clipboard);
+}
+
+void copy_text(struct Node* head, int line_index, int char_index, int num_chars) {
+    struct Node* cur = head;
+    int cur_line = 0;
+    while (cur != NULL && cur_line < line_index) {
+        cur = cur->next_pointer;
+        cur_line++;
+    }
+    if (cur == NULL) {
+        printf("Error: Line out of range.\n");
+        return;
+    }
+    if (char_index < 0 || char_index >= cur->length) {
+        printf("Error: Char index out of range.\n");
+        return;
+    }
+    if (char_index + num_chars > cur->length) {
+        num_chars = cur->length - char_index;
+    }
+
+    if (clipboard != NULL) free(clipboard);
+    clipboard = (char*)malloc(num_chars + 1);
+    strncpy(clipboard, cur->text + char_index, num_chars);
+    clipboard[num_chars] = '\0';
+
+    printf("Copied: '%s'\n", clipboard);
+}
+
+void paste_text(struct Node* head, int line_index, int char_index) {
+    if (clipboard == NULL || strlen(clipboard) == 0) {
+        printf("Error: Clipboard is empty.\n");
+        return;
+    }
+    struct Node* cur = head;
+    int cur_line = 0;
+    while (cur != NULL && cur_line < line_index) {
+        cur = cur->next_pointer;
+        cur_line++;
+    }
+    if (cur == NULL) {
+        printf("Error: Line out of range.\n");
+        return;
+    }
+    insert_text_at(cur, char_index, clipboard);
+}
+
+
 
 
 int main()
@@ -648,13 +730,52 @@ int main()
             break;
 
         case 11: // Cut
+        {
+            int line_index, char_index, num_chars;
+            printf("Choose line and index and number of symbols: ");
+            if (scanf("%d %d %d", &line_index, &char_index, &num_chars) != 3) {
+                printf("Invalid input.\n");
+                while (getchar() != '\n');
+                break;
+            }
+            while (getchar() != '\n');
+
+            push_undo(head);
+            cut_text(head, line_index, char_index, num_chars);
             break;
+        }
 
         case 12: // Paste
+        {
+            int line_index, char_index;
+            printf("Choose line and index: ");
+            if (scanf("%d %d", &line_index, &char_index) != 2) {
+                printf("Invalid input.\n");
+                while (getchar() != '\n');
+                break;
+            }
+            while (getchar() != '\n');
+
+            push_undo(head);
+            paste_text(head, line_index, char_index);
             break;
+        }
 
         case 13: // Copy
+        {
+            int line_index, char_index, num_chars;
+            printf("Choose line and index and number of symbols: ");
+            if (scanf("%d %d %d", &line_index, &char_index, &num_chars) != 3) {
+                printf("Invalid input.\n");
+                while (getchar() != '\n');
+                break;
+            }
+            while (getchar() != '\n');
+
+            // Copy не змінює текст — Undo не потрібен
+            copy_text(head, line_index, char_index, num_chars);
             break;
+        }
 
         case 14: // Insert with replacement
         {
